@@ -8,7 +8,26 @@ import { books } from '../data/books';
 import { Book, CartItem as CartItemType } from '../types';
 
 export default function CartPage() {
-  const [cartItems, setCartItems] = useState<{ book: Book; quantity: number }[]>([]);
+  const [cartItems, setCartItems] = useState<{ book: Book; quantity: number }[]>(() => {
+  if (typeof window === "undefined") return [];
+  try {
+    const storedCart = localStorage.getItem("cart");
+    if (!storedCart) return [];
+    const parsed = JSON.parse(storedCart);
+    return Array.isArray(parsed)
+      ? parsed
+          .map((item) => {
+            const book = books.find((b) => b.id === item.bookId);
+            return book ? { book, quantity: item.quantity } : null;
+          })
+          .filter((x): x is { book: Book; quantity: number } => x !== null)
+      : [];
+  } catch (err) {
+    console.error("Failed to parse cart from localStorage", err);
+    return [];
+  }
+});
+
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -74,10 +93,13 @@ export default function CartPage() {
   };
 
   const clearCart = () => {
-    setCartItems([]);
-    localStorage.removeItem('cart');
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
-  };
+  if (window.confirm("Are you sure you want to empty your cart?")) {
+    setCart([]);
+    localStorage.removeItem("cart");
+    window.dispatchEvent(new Event("cartUpdated"));
+  }
+};
+
 
   const totalPrice = cartItems.reduce((total, item) => total + (item.book.price * item.quantity), 0);
 
@@ -130,4 +152,8 @@ export default function CartPage() {
       )}
     </div>
   );
+}
+
+function setCart(arg0: never[]) {
+  throw new Error('Function not implemented.');
 }
