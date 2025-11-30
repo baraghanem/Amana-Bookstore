@@ -25,6 +25,7 @@ export interface CartItem {
   bookId: string;
   quantity: number;
   addedAt: string;
+  userId?: string;
 }
 
 export interface Review {

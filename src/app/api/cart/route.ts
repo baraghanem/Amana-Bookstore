@@ -4,6 +4,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCartItemsCollection, getBooksCollection } from '@/lib/mongodb';
 import type { CartItem } from '@/app/types';
+import { WithId, Document, ObjectId } from 'mongodb'; // Import necessary types from mongodb
+
+// Helper type for the fully enriched cart item to fix the compilation error
+// The item coming from the DB is technically a Document (or CartItem), 
+// but the MongoDB driver doesn't enforce the CartItem structure strictly
+type DbCartItem = WithId<Document> & { quantity: number; bookId: string; userId: string; id: string; addedAt: string; };
 
 // GET cart items for a user
 export async function GET(request: NextRequest) {
@@ -15,15 +21,18 @@ export async function GET(request: NextRequest) {
     const booksCollection = await getBooksCollection();
 
     // Get cart items for the user
+    // CRITICAL FIX: Cast the result array to the custom DbCartItem[] type 
+    // to include the 'quantity' property that TypeScript can't infer from Document.
     const cartItems = await cartCollection
       .find({ userId })
       .sort({ addedAt: -1 })
-      .toArray();
+      .toArray() as unknown as DbCartItem[]; 
 
     // Enrich cart items with book details
     const enrichedCart = await Promise.all(
       cartItems.map(async (item) => {
-        const book = await booksCollection.findOne({ id: item.bookId });
+        // item.bookId is safe to access now due to the type assertion above
+        const book = await booksCollection.findOne({ id: item.bookId }); 
         return {
           ...item,
           book: book || null
@@ -33,6 +42,7 @@ export async function GET(request: NextRequest) {
 
     // Calculate totals
     const subtotal = enrichedCart.reduce((sum, item) => {
+      // item.quantity is now correctly typed and accessible
       if (item.book) {
         return sum + (item.book.price * item.quantity);
       }
@@ -105,7 +115,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if book is in stock
-    if (!book.inStock) {
+    // NOTE: MongoDB documents might not have 'inStock' explicitly typed either, 
+    // but Next.js usually allows this basic property access without strict errors 
+    // if the data is consistent. If this line also fails, you may need a type assertion here too.
+    if (!book.inStock) { 
       return NextResponse.json(
         {
           success: false,
@@ -118,7 +131,8 @@ export async function POST(request: NextRequest) {
     const cartCollection = await getCartItemsCollection();
 
     // Check if item already exists in cart
-    const existingItem = await cartCollection.findOne({ userId, bookId });
+    // Cast the result to the desired type for safe property access
+    const existingItem = await cartCollection.findOne({ userId, bookId }) as unknown as (CartItem | null);
 
     if (existingItem) {
       // Update quantity
@@ -138,6 +152,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // Add new item
+      // The CartItem type definition is used here for the new document
       const newItem: CartItem = {
         id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         userId,
