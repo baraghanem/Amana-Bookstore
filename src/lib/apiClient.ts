@@ -1,7 +1,7 @@
 // lib/apiClient.ts
 // Client-side utility functions for making API calls
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;
@@ -145,12 +145,14 @@ export const cartApi = {
 };
 
 // Helper function for error handling
-export const handleApiError = (error: any): string => {
-    if (error?.error) {
-        return error.error;
-    }
-    if (error?.message) {
-        return error.message;
+export const handleApiError = (error: unknown): string => {
+    if (typeof error === 'object' && error !== null) {
+        if ('error' in error && typeof error.error === 'string') {
+            return error.error;
+        }
+        if ('message' in error && typeof error.message === 'string') {
+            return error.message;
+        }
     }
     return 'An unexpected error occurred';
 };

@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { useState, useEffect } from 'react';
-import { CartItem } from '../types';
 import { cartApi } from '@/lib/apiClient';
 
 const Navbar: React.FC = () => {
@@ -18,7 +17,8 @@ const Navbar: React.FC = () => {
       try {
         const response = await cartApi.get();
         if (response.success && response.data) {
-          setCartItemCount(response.data.itemCount);
+          const cartData = response.data as { items: unknown[]; subtotal: number; itemCount: number };
+          setCartItemCount(cartData.itemCount);
         }
       } catch (error) {
         console.error('Failed to fetch cart count', error);
