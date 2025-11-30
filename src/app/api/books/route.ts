@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const inStock = searchParams.get('inStock');
 
     // Build MongoDB query
-    const query: Record<string, any> = {};
+    const query: Record<string, unknown> = {};
 
     // Text search across multiple fields
     if (search) {
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build sort object
-    const sortObj: Record<string, any> = {};
+    const sortObj: Record<string, number> = {};
     switch (sort) {
       case 'price-asc':
         sortObj.price = 1;
