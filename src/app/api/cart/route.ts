@@ -1,106 +1,299 @@
 // src/app/api/cart/route.ts
-import { NextResponse } from 'next/server';
+// Serverless API for cart operations - GET, POST, PUT, DELETE
 
-// GET /api/cart - Get cart items
-export async function GET() {
-  // In a real application, this would fetch cart items from a database
-  // based on user session or authentication token
-  return NextResponse.json({ message: 'Cart API endpoint - GET method' });
-}
+import { NextRequest, NextResponse } from 'next/server';
+import { getCartItemsCollection, getBooksCollection } from '@/lib/mongodb';
+import type { CartItem } from '@/app/types';
 
-// POST /api/cart - Add item to cart
-export async function POST(request: Request) {
+// GET cart items for a user
+export async function GET(request: NextRequest) {
   try {
-    const body = await request.json();
-    // In a real application, this would add an item to the user's cart in the database
-    return NextResponse.json({ 
-      message: 'Item added to cart successfully',
-      item: body 
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId') || 'guest';
+
+    const cartCollection = await getCartItemsCollection();
+    const booksCollection = await getBooksCollection();
+
+    // Get cart items for the user
+    const cartItems = await cartCollection
+      .find({ userId })
+      .sort({ addedAt: -1 })
+      .toArray();
+
+    // Enrich cart items with book details
+    const enrichedCart = await Promise.all(
+      cartItems.map(async (item) => {
+        const book = await booksCollection.findOne({ id: item.bookId });
+        return {
+          ...item,
+          book: book || null
+        };
+      })
+    );
+
+    // Calculate totals
+    const subtotal = enrichedCart.reduce((sum, item) => {
+      if (item.book) {
+        return sum + (item.book.price * item.quantity);
+      }
+      return sum;
+    }, 0);
+
+    const itemCount = enrichedCart.reduce((sum, item) => sum + item.quantity, 0);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        items: enrichedCart,
+        subtotal: parseFloat(subtotal.toFixed(2)),
+        itemCount
+      }
     });
-  } catch (err) {
-    console.error('Error adding item to cart:', err);
+
+  } catch (error) {
+    console.error('Error fetching cart:', error);
     return NextResponse.json(
-      { error: 'Failed to add item to cart' },
+      {
+        success: false,
+        error: 'Failed to fetch cart',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
 }
 
-// PUT /api/cart - Update cart item
-export async function PUT(request: Request) {
+// POST - Add item to cart
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    // In a real application, this would update an existing cart item
-    return NextResponse.json({ 
-      message: 'Cart item updated successfully',
-      item: body 
-    });
-  } catch (err) {
-    console.error('Error updating cart item:', err);
+    const { userId = 'guest', bookId, quantity = 1 } = body;
+
+    if (!bookId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'bookId is required'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate quantity
+    if (quantity < 1) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Quantity must be at least 1'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Check if book exists
+    const booksCollection = await getBooksCollection();
+    const book = await booksCollection.findOne({ id: bookId });
+
+    if (!book) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Book not found'
+        },
+        { status: 404 }
+      );
+    }
+
+    // Check if book is in stock
+    if (!book.inStock) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Book is out of stock'
+        },
+        { status: 400 }
+      );
+    }
+
+    const cartCollection = await getCartItemsCollection();
+
+    // Check if item already exists in cart
+    const existingItem = await cartCollection.findOne({ userId, bookId });
+
+    if (existingItem) {
+      // Update quantity
+      const newQuantity = existingItem.quantity + quantity;
+      await cartCollection.updateOne(
+        { userId, bookId },
+        { $set: { quantity: newQuantity } }
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: 'Cart updated successfully',
+        data: {
+          ...existingItem,
+          quantity: newQuantity
+        }
+      });
+    } else {
+      // Add new item
+      const newItem: CartItem = {
+        id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        userId,
+        bookId,
+        quantity,
+        addedAt: new Date().toISOString()
+      };
+
+      await cartCollection.insertOne(newItem);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Item added to cart',
+        data: newItem
+      }, { status: 201 });
+    }
+
+  } catch (error) {
+    console.error('Error adding to cart:', error);
     return NextResponse.json(
-      { error: 'Failed to update cart item' },
+      {
+        success: false,
+        error: 'Failed to add item to cart',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
 }
 
-// DELETE /api/cart - Remove item from cart
-export async function DELETE(request: Request) {
+// PUT - Update cart item quantity
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { userId = 'guest', itemId, quantity } = body;
+
+    if (!itemId || quantity === undefined) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'itemId and quantity are required'
+        },
+        { status: 400 }
+      );
+    }
+
+    if (quantity < 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Quantity cannot be negative'
+        },
+        { status: 400 }
+      );
+    }
+
+    const cartCollection = await getCartItemsCollection();
+
+    if (quantity === 0) {
+      // Remove item if quantity is 0
+      const result = await cartCollection.deleteOne({ id: itemId, userId });
+
+      if (result.deletedCount === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Cart item not found'
+          },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Item removed from cart'
+      });
+    } else {
+      // Update quantity
+      const result = await cartCollection.updateOne(
+        { id: itemId, userId },
+        { $set: { quantity } }
+      );
+
+      if (result.matchedCount === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Cart item not found'
+          },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Cart updated successfully'
+      });
+    }
+
+  } catch (error) {
+    console.error('Error updating cart:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Failed to update cart',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Remove item from cart
+export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const itemId = searchParams.get('itemId');
-    
-    // In a real application, this would remove an item from the user's cart
-    return NextResponse.json({ 
-      message: 'Item removed from cart successfully',
-      itemId 
+    const userId = searchParams.get('userId') || 'guest';
+
+    if (!itemId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'itemId query parameter is required'
+        },
+        { status: 400 }
+      );
+    }
+
+    const cartCollection = await getCartItemsCollection();
+    const result = await cartCollection.deleteOne({ id: itemId, userId });
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Cart item not found'
+        },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Item removed from cart'
     });
-  } catch (err) {
-    console.error('Error removing cart item:', err);
+
+  } catch (error) {
+    console.error('Error removing from cart:', error);
     return NextResponse.json(
-      { error: 'Failed to remove item from cart' },
+      {
+        success: false,
+        error: 'Failed to remove item from cart',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
 }
-
-// Future implementation notes:
-// - Session management for user carts (using NextAuth.js or similar)
-// - Database integration patterns (Prisma, Drizzle, or raw SQL)
-// - Cart persistence strategies:
-//   * Guest carts: Store in localStorage/cookies with optional merge on login
-//   * User carts: Store in database with user ID association
-//   * Hybrid approach: localStorage for guests, database for authenticated users
-// - Security considerations:
-//   * Validate user ownership of cart items
-//   * Sanitize input data
-//   * Rate limiting to prevent abuse
-// - Performance optimizations:
-//   * Cache frequently accessed cart data
-//   * Batch operations for multiple item updates
-//   * Implement optimistic updates on the frontend
-
-// Example future database integration:
-// import { db } from '@/lib/database';
-// import { getServerSession } from 'next-auth';
-// 
-// export async function GET() {
-//   const session = await getServerSession();
-//   if (!session?.user?.id) {
-//     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-//   }
-//   
-//   try {
-//     const cartItems = await db.cartItem.findMany({
-//       where: { userId: session.user.id },
-//       include: { book: true }
-//     });
-//     
-//     return NextResponse.json(cartItems);
-//   } catch (error) {
-//     return NextResponse.json(
-//       { error: 'Failed to fetch cart items' },
-//       { status: 500 }
-//     );
-//   }
-// }

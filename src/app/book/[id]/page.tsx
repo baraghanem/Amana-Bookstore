@@ -4,8 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { books } from '../../data/books';
-import { reviews } from '../../data/reviews';
+import { booksApi, reviewsApi } from '@/lib/apiClient';
 import { Book, CartItem, Review } from '../../types';
 
 export default function BookDetailPage() {
@@ -20,18 +19,36 @@ export default function BookDetailPage() {
   const { id } = params;
 
   useEffect(() => {
-    if (id) {
-      const foundBook = books.find((b) => b.id === id);
-      if (foundBook) {
-        setBook(foundBook);
-        // Get reviews for this book
-        const bookReviewsData = reviews.filter((review) => review.bookId === id);
-        setBookReviews(bookReviewsData);
-      } else {
-        setError('Book not found.');
+    const fetchBookAndReviews = async () => {
+      if (!id) return;
+
+      try {
+        setIsLoading(true);
+
+        // Fetch book details
+        const bookResponse = await booksApi.getById(id as string);
+
+        if (bookResponse.success && bookResponse.data) {
+          setBook(bookResponse.data);
+
+          // Fetch reviews for this book
+          const reviewsResponse = await reviewsApi.getByBookId(id as string);
+
+          if (reviewsResponse.success && reviewsResponse.data) {
+            setBookReviews(reviewsResponse.data);
+          }
+        } else {
+          setError(bookResponse.error || 'Book not found');
+        }
+      } catch (err) {
+        setError('Failed to load book details');
+        console.error('Error fetching book:', err);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
-    }
+    };
+
+    fetchBookAndReviews();
   }, [id]);
 
   const handleAddToCart = () => {
@@ -68,12 +85,12 @@ export default function BookDetailPage() {
     // Redirect to the cart page after adding
     router.push('/cart');
   };
-  
+
   const renderStars = (rating: number) => {
     const stars = [];
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
-    
+
     for (let i = 1; i <= 5; i++) {
       if (i <= fullStars) {
         // Full star
@@ -110,24 +127,35 @@ export default function BookDetailPage() {
 
   const formatDate = (timestamp: string) => {
     const date = new Date(timestamp);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   };
 
   if (isLoading) {
-    return <div className="text-center py-10">Loading...</div>;
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-center items-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading book details...</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="text-center py-10">
-        <h1 className="text-2xl font-bold text-red-500">{error}</h1>
-        <Link href="/" className="text-blue-500 hover:underline mt-4 inline-block cursor-pointer">
-          Back to Home
-        </Link>
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
+          <h2 className="text-2xl font-bold text-red-700 mb-2">{error}</h2>
+          <Link href="/" className="text-blue-500 hover:underline mt-4 inline-block cursor-pointer">
+            Back to Home
+          </Link>
+        </div>
       </div>
     );
   }
@@ -149,7 +177,7 @@ export default function BookDetailPage() {
         <div className="flex flex-col justify-center">
           <h1 className="text-4xl font-extrabold text-gray-800 mb-2">{book.title}</h1>
           <p className="text-xl text-gray-600 mb-4">by {book.author}</p>
-          
+
           <div className="flex items-center mb-4">
             {renderStars(book.rating)}
             <span className="text-md text-gray-500 ml-2">({book.reviewCount} reviews)</span>
@@ -179,11 +207,15 @@ export default function BookDetailPage() {
             />
           </div>
 
-          <button 
+          <button
             onClick={handleAddToCart}
-            className="w-full bg-blue-500 text-white py-3 rounded-md hover:bg-blue-600 transition-colors duration-300 text-lg font-semibold cursor-pointer"
+            disabled={!book.inStock}
+            className={`w-full py-3 rounded-md text-lg font-semibold transition-colors duration-300 cursor-pointer ${book.inStock
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
           >
-            Add to Cart
+            {book.inStock ? 'Add to Cart' : 'Out of Stock'}
           </button>
 
           <Link href="/" className="text-blue-500 hover:underline mt-6 text-center cursor-pointer">
@@ -195,7 +227,7 @@ export default function BookDetailPage() {
       {/* Reviews Section */}
       <div className="mt-12">
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Customer Reviews</h2>
-        
+
         {bookReviews.length > 0 ? (
           <div className="space-y-6">
             {bookReviews.map((review) => (
@@ -217,10 +249,10 @@ export default function BookDetailPage() {
                     )}
                   </div>
                 </div>
-                
+
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">{review.title}</h3>
                 <p className="text-gray-700 mb-3 leading-relaxed">{review.comment}</p>
-                
+
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-600">by {review.author}</span>
                 </div>
