@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build sort object
-    const sortObj: Record<string, number> = {};
+    const sortObj: Record<string, 1 | -1> = {};
     switch (sort) {
       case 'price-asc':
         sortObj.price = 1;
