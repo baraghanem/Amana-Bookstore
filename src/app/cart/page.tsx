@@ -19,18 +19,16 @@ export default function CartPage() {
 
       if (response.success && response.data) {
         // The API returns enriched items with book details
-        // Map API response to component state structure
-        interface ApiCartItem {
-          id: string;
-          book: Book;
-          quantity: number;
-        }
-
-        setCartItems(response.data.items.map((item: ApiCartItem) => ({
-          book: item.book,
-          quantity: item.quantity,
-          id: item.id // Cart item ID
-        })));
+        // Filter out items where book is null and map to component state structure
+        setCartItems(
+          response.data.items
+            .filter((item) => item.book !== null)
+            .map((item) => ({
+              book: item.book!,
+              quantity: item.quantity,
+              id: item.id // Cart item ID
+            }))
+        );
       } else {
         setError(response.error || 'Failed to load cart');
       }
