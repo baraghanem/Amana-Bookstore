@@ -1,7 +1,7 @@
 // lib/apiClient.ts
 // Client-side utility functions for making API calls
 
-import { Book, Review } from '@/app/types';
+import { Book, Review, CartItem } from '@/app/types';
 
 export interface ApiResponse<T = unknown> {
     success: boolean;
@@ -16,6 +16,13 @@ export interface ApiResponse<T = unknown> {
         hasNextPage: boolean;
         hasPrevPage: boolean;
     };
+}
+
+// Cart response type with enriched items
+export interface CartResponse {
+    items: Array<CartItem & { book: Book | null }>;
+    subtotal: number;
+    itemCount: number;
 }
 
 // Books API
@@ -90,7 +97,7 @@ export const cartApi = {
     /**
      * Get cart items for a user
      */
-    get: async (userId: string = 'guest'): Promise<ApiResponse> => {
+    get: async (userId: string = 'guest'): Promise<ApiResponse<CartResponse>> => {
         const response = await fetch(`/api/cart?userId=${userId}`);
         return response.json();
     },
@@ -102,7 +109,7 @@ export const cartApi = {
         userId?: string;
         bookId: string;
         quantity?: number;
-    }): Promise<ApiResponse> => {
+    }): Promise<ApiResponse<CartItem>> => {
         const response = await fetch('/api/cart', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -122,7 +129,7 @@ export const cartApi = {
         userId?: string;
         itemId: string;
         quantity: number;
-    }): Promise<ApiResponse> => {
+    }): Promise<ApiResponse<void>> => {
         const response = await fetch('/api/cart', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -138,7 +145,7 @@ export const cartApi = {
     /**
      * Remove item from cart
      */
-    remove: async (itemId: string, userId: string = 'guest'): Promise<ApiResponse> => {
+    remove: async (itemId: string, userId: string = 'guest'): Promise<ApiResponse<void>> => {
         const response = await fetch(`/api/cart?itemId=${itemId}&userId=${userId}`, {
             method: 'DELETE'
         });
