@@ -1,6 +1,8 @@
 // lib/apiClient.ts
 // Client-side utility functions for making API calls
 
+import { Book, Review } from '@/app/types';
+
 export interface ApiResponse<T = unknown> {
     success: boolean;
     data?: T;
@@ -29,7 +31,7 @@ export const booksApi = {
         limit?: number;
         featured?: boolean;
         inStock?: boolean;
-    }): Promise<ApiResponse> => {
+    }): Promise<ApiResponse<Book[]>> => {
         const searchParams = new URLSearchParams();
 
         if (params?.search) searchParams.set('search', params.search);
@@ -48,7 +50,7 @@ export const booksApi = {
     /**
      * Get a single book by ID
      */
-    getById: async (id: string): Promise<ApiResponse> => {
+    getById: async (id: string): Promise<ApiResponse<Book>> => {
         const response = await fetch(`/api/books/${id}`);
         return response.json();
     }
@@ -59,7 +61,7 @@ export const reviewsApi = {
     /**
      * Get reviews for a specific book
      */
-    getByBookId: async (bookId: string): Promise<ApiResponse> => {
+    getByBookId: async (bookId: string): Promise<ApiResponse<Review[]>> => {
         const response = await fetch(`/api/reviews?bookId=${bookId}`);
         return response.json();
     },
